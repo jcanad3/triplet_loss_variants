@@ -2,3 +2,4 @@
 *.png
 *.jpeg
 *.tar.gz
+lightning_logs/*

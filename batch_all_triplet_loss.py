@@ -38,8 +38,8 @@ def _Lp_pairwise_distances(embeddings, p):
 	distances = torch.zeros(embeddings.shape[0], embeddings.shape[0])
 	for i in range(0, embeddings.shape[0]):
 		for j in range(0, embeddings.shape[0]):
-			distances[i,j] = torch.pow(torch.sum(torch.pow(embeddings[i,:] - embeddings[j,:], p)), 1/p)
-
+			distances[i,j] = torch.pow(torch.sum(torch.pow(torch.abs(embeddings[i,:] - embeddings[j,:]), p)), 1/p)
+	
 	return distances
 
 def _get_anchor_positive_triplet_mask(labels):
@@ -90,7 +90,7 @@ def _get_triplet_mask(labels):
 	# Check that i, j and k are distinct
 	data = torch.eye(labels.shape[0])
 	# changing data type for logical operations
-	indices_equal = data.type(torch.ByteTensor)
+	indices_equal = data.type(torch.BoolTensor)
 
 	indices_not_equal = ~indices_equal
 	

@@ -11,7 +11,7 @@ import torch, os
 class InceptionTriplet(pl.LightningModule):
 	def __init__(self):
 		super(InceptionTriplet, self).__init__()
-		self.resnet = models.resnet18(pretrained=True)
+		self.resnet = models.resnet18(pretrained=False)
 		for param in self.resnet.parameters():
 			param.requires_grad = False
 
@@ -25,10 +25,10 @@ class InceptionTriplet(pl.LightningModule):
 		)
 
 		# p is the value for Lp norm
-		self.p_norm = 0.5
+		self.p_norm = 1
 
 		# margin for triplet loss
-		self.margin = 0.5
+		self.margin = 1.0
 
 	def forward(self, x):
 		return self.resnet(x)
