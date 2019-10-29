@@ -25,7 +25,7 @@ class InceptionTriplet(pl.LightningModule):
 		)
 
 		# p is the value for Lp norm
-		self.p_norm = 1
+		self.p_norm = 1.0
 
 		# margin for triplet loss
 		self.margin = 1.0

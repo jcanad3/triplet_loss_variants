@@ -1,0 +1,29 @@
+from scipy.spatial.distance import mahalanobis
+from sklearn.neighbors import DistanceMetric
+from sklearn.covariance import EmpiricalCovariance as EC
+import numpy as np
+
+X = np.random.normal(0, 10, (3,10))
+print('X', X)
+#b = np.random.randn(1, 10)
+#print('B', b)
+
+ec = EC().fit(X)
+print('Inverse matrix', ec.precision_)
+
+dist = ec.mahalanobis(X)
+print(dist)
+
+#cov_a_b = np.cov(a,b)
+#print('Cov')
+#print(cov_a_b)
+#
+#inv_cov_a_b = 1 / cov_a_b
+#print(inv_cov_a_b.shape)
+#print(inv_cov_a_b)
+#
+#dist = DistanceMetric.get_metric('mahalanobis', inv_cov_a_b)
+#
+#
+#dist = mahalanobis(a, b, inv_cov_a_b)
+#print('Dist', dist)
