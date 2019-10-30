@@ -39,8 +39,11 @@ def _Lp_pairwise_distances(embeddings, p):
 	distances = torch.zeros(embeddings.shape[0], embeddings.shape[0])
 	for i in range(0, embeddings.shape[0]):
 		for j in range(0, embeddings.shape[0]):
-			distances[i,j] = torch.pow(torch.sum(torch.pow(torch.abs(embeddings[i,:] - embeddings[j,:]), p)), 1/p)
-	
+			#distances[i,j] = torch.pow(torch.sum(torch.pow(torch.abs(embeddings[i,:] - embeddings[j,:]), p)), 1/p)
+			distances[i,j] = torch.sum(torch.pow(torch.abs(embeddings[i,:] - embeddings[j,:]), p))
+
+	distances = torch.max(distances, torch.tensor([0.0]))
+
 	return distances
 
 def _mahalanobis_dist(embeddings, labels):
@@ -92,22 +95,21 @@ def _batch_mahalanobis_dist(embeddings):
 def _t_batch_mahalanobis_dist(embeddings):
 	
 	# calc covar
-	#batch_covar = 
+	print(embeddings.T.shape)
+	print(embeddings.shape)
+	batch_covar = torch.matmul(embeddings, torch.transpose(embeddings, 0, 1))
 
-	distances = np.zeros((np_embeddings.shape[0], np_embeddings.shape[0]))
-	for i in range(0, np_embeddings.shape[0]):
-		batch_est_mean = ec.location_
-		batch_est_precis = 1 / ec.covariance_	
-		for j in range(0, np_embeddings.shape[0]):
+	batch_est_precis = 1 / batch_covar
+
+	distances = torch.zeros((embeddings.shape[0], embeddings.shape[0]))
+	for i in range(0, embeddings.shape[0]):
+		for j in range(0, embeddings.shape[0]):
 			# added np abs to fix negatives in sqrt, given that it's a scaled distance, should still be viable
-			distances[i,j] = np.sqrt(np.abs(np.matmul(np.matmul((np_embeddings[i,:] - np_embeddings[j,:]).T, batch_est_precis), np_embeddings[i,:] - np_embeddings[j,:])))
-
-	distances = torch.from_numpy(distances)
-	distances = distances.type(torch.DoubleTensor)
+			dist_calc = embeddings[i, :] - embeddings[j, :]
+			print(dist_calc.shape)
+			distances[i,j] = torch.sqrt(torch.abs(torch.mul(torch.mul(torch.transpose((embeddings[i,:] - embeddings[j,:]), 0, 1), batch_est_precis), embeddings[i,:] - embeddings[j,:])))
 
 	return distances
-		
-
 
 def _get_anchor_positive_triplet_mask(labels):
 	"""Return a 2D mask where mask[a, p] is True iff a and p are distinct and have same label.
@@ -183,8 +185,9 @@ def _get_triplet_mask(labels):
 
 def batch_all_triplet_loss(embeddings, labels, p, margin, squared=True):
 	#pairwise_dist = _pairwise_distances(embeddings, squared=squared)
-	#pairwise_dist = _Lp_pairwise_distances(embeddings, p)
-	pairwise_dist = _batch_mahalanobis_dist(embeddings)
+	pairwise_dist = _Lp_pairwise_distances(embeddings, p)
+	#pairwise_dist = _batch_mahalanobis_dist(embeddings)
+	#pairwise_dist = _t_batch_mahalanobis_dist(embeddings)	
 
 	anchor_positive_dist = torch.unsqueeze(pairwise_dist, 2)
 	anchor_negative_dist = torch.unsqueeze(pairwise_dist, 1)
@@ -199,7 +202,11 @@ def batch_all_triplet_loss(embeddings, labels, p, margin, squared=True):
 	# (where label(a) != label(p) or label(n) == label(a) or a == p)
 	mask = _get_triplet_mask(labels)
 	#mask = tf.to_float(mask)
-	triplet_loss = torch.mul(mask, triplet_loss)
+
+	try:
+		triplet_loss = torch.mul(mask, triplet_loss)
+	except:
+		triplet_loss = torch.mul(mask.type(torch.DoubleTensor), triplet_loss)
 
 	# Remove negative losses (i.e. the easy triplets)
 	try:

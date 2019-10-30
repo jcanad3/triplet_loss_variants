@@ -1,3 +1,4 @@
+from batch_all_triplet_loss import _t_batch_mahalanobis_dist
 import torch
 
 def _pairwise_distances(embeddings, squared=True):
@@ -40,6 +41,30 @@ def _Lp_pairwise_distances(embeddings, p):
 
 	return distances
 
+def _t_batch_mahalanobis_dist(embeddings):
+	
+	# calc covar
+	print(embeddings.T.shape)
+	print(embeddings.shape)
+	batch_covar = torch.matmul(embeddings, torch.transpose(embeddings, 0, 1))
+
+	batch_est_precis = 1 / batch_covar
+
+	print(batch_est_precis)
+
+
+	distances = torch.zeros((embeddings.shape[0], embeddings.shape[0]))
+	for i in range(0, embeddings.shape[0]):
+		for j in range(0, embeddings.shape[0]):
+			# added np abs to fix negatives in sqrt, given that it's a scaled distance, should still be viable
+			dist_calc = embeddings[i, :] - embeddings[j, :]
+			print(dist_calc.shape)
+			distances[i,j] = torch.sqrt(torch.abs(torch.mul(torch.mul(torch.transpose((embeddings[i,:] - embeddings[j,:])), batch_est_precis), embeddings[i,:] - embeddings[j,:])))
+
+	return distances
+
+
+
 a = torch.randn((5,10))
 
 lp_dist = _Lp_pairwise_distances(a, 2)
@@ -47,3 +72,7 @@ print('lp_dist', torch.pow(lp_dist, 2))
 
 euc_pairwise = _pairwise_distances(a)
 print('Euc pairwise', euc_pairwise)
+
+
+print('')
+print('malahnbois dist', _t_batch_mahalanobis_dist(a))
