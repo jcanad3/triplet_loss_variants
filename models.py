@@ -4,9 +4,9 @@ import torch.nn as nn
 class InceptionTriplet(nn.Module):
 	def __init__(self):
 		super(InceptionTriplet, self).__init__()
-		self.resnet = models.resnet18(pretrained=False)
-#		for param in self.resnet.parameters():
-#			param.requires_grad = False
+		self.resnet = models.resnet18(pretrained=True)
+		for param in self.resnet.parameters():
+			param.requires_grad = False
 
 		out_features = self.resnet.fc.in_features
 		# add embedding layer

@@ -3,6 +3,8 @@ from sklearn.covariance import EmpiricalCovariance as EC
 import numpy as np
 import torch
 
+# PyTorch build of Omoindrot's Tensorflow version
+
 def _pairwise_distances(embeddings, squared=True):
  	# Get the dot product between all embeddings
 	# shape (batch_size, batch_size)
@@ -19,7 +21,7 @@ def _pairwise_distances(embeddings, squared=True):
 	distances = torch.unsqueeze(square_norm, 1) - 2.0 * dot_product + torch.unsqueeze(square_norm, 0)
 
 	# Because of computation errors, some distances might be negative so we put everything >= 0.0
-	distances = torch.max(distances, torch.tensor([0.0]))
+	distances = torch.max(distances, torch.tensor([0.0], dtype=torch.double))
 
 	if not squared:
 		# Because the gradient of sqrt is infinite when distances == 0.0 (ex: on the diagonal)
@@ -34,6 +36,18 @@ def _pairwise_distances(embeddings, squared=True):
 		distances = distances * (1.0 - mask)
 
 	return distances
+
+def ngram_dist(embeddings, n_grams, step=1):
+	# calc ngrams for each embedding
+	X_ngram = embeddings.unfold(1, n_grams, step)
+
+	# calc ngram pairwise distances
+	dists = torch.zeros((X_ngram.shape[0], X_ngram.shape[0]))
+	for i in range(0, X_ngram.shape[0]):
+		for j in range(0, X_ngram.shape[0]):
+			dists[i,j] = torch.sum(torch.sum(torch.pow(X_ngram[i, :, :] - X_ngram[j, :, :], 2), axis=1), axis=0)
+
+	return dists
 
 def _Lp_pairwise_distances(embeddings, p):
 	distances = torch.zeros(embeddings.shape[0], embeddings.shape[0])
@@ -51,7 +65,6 @@ def _mahalanobis_dist(embeddings, labels):
 	np_labels = labels.detach().numpy()
 	num_classes = np.unique(np_labels)
 
-	
 	# get intraclass stats
 	class_measures = {}
 	for class_idx in num_classes.tolist():
@@ -63,15 +76,29 @@ def _mahalanobis_dist(embeddings, labels):
 
 	distances = np.zeros((np_embeddings.shape[0], np_embeddings.shape[0]))
 	for i in range(0, np_embeddings.shape[0]):
-		i_label = np_labels[i]
-		i_mean = class_measures[i_label].location_
-		i_precis = 1 / class_measures[i_label].covariance_
-		
-		for j in range(0, np_embeddings.shape[0]):
-			# added np abs to fix negatives in sqrt, given that it's a scaled distance, should still be viable
-			distances[i,j] = np.sqrt(np.abs(np.matmul(np.matmul((np_embeddings[i,:] - i_mean).T, i_precis),(np_embeddings[i,:] - i_mean))))
+		for j in range(i, np_embeddings.shape[0]):
+			dists = []
+			for cluster in num_classes.tolist():
+				class_mean = class_measures[cluster].location_
+				class_precis = class_measures[cluster].covariance_
+				temp_dist = np.sqrt(np.abs(np.matmul(np.matmul((np_embeddings[j,:] - class_mean).T, class_precis),(np_embeddings[j,:] - class_mean))))
+				dists.append(temp_dist)
 
+			distances[i,j] = min(dists) 
+
+#		for i in range(0, np_embeddings.shape[0]):
+#			i_label = np_labels[i]
+#			i_mean = class_measures[i_label].location_
+#			i_precis = 1 / class_measures[i_label].covariance_
+			
+#			for j in range(0, np_embeddings.shape[0]):
+#				# added np abs to fix negatives in sqrt, given that it's a scaled distance, should still be viable
+#				distances[i,j] = np.sqrt(np.abs(np.matmul(np.matmul((np_embeddings[i,:] - i_mean).T, i_precis),(np_embeddings[i,:] - i_mean))))
+
+	print(distances)
+	distances = np.random.normal(0, 10, size=(5,5))
 	distances = torch.from_numpy(distances)
+
 
 	return distances
 
@@ -85,10 +112,14 @@ def _batch_mahalanobis_dist(embeddings):
 		batch_est_precis = 1 / ec.covariance_	
 		for j in range(0, np_embeddings.shape[0]):
 			# added np abs to fix negatives in sqrt, given that it's a scaled distance, should still be viable
-			distances[i,j] = np.sqrt(np.abs(np.matmul(np.matmul((np_embeddings[i,:] - np_embeddings[j,:]).T, batch_est_precis), np_embeddings[i,:] - np_embeddings[j,:])))
+			#distances[i,j] = np.sqrt(np.matmul(np.matmul((np_embeddings[i,:] - np_embeddings[j,:]).T, batch_est_precis), np_embeddings[i,:] - np_embeddings[j,:]))
+			distances[i,j] = np.matmul(np.matmul((np_embeddings[i,:] - np_embeddings[j,:]).T, batch_est_precis), np_embeddings[i,:] - np_embeddings[j,:])
 
 	distances = torch.from_numpy(distances)
 	distances = distances.type(torch.DoubleTensor)
+	distances = torch.max(distances, torch.tensor([0.0], dtype=torch.double))
+
+	print(distances)
 
 	return distances
 		
@@ -185,9 +216,11 @@ def _get_triplet_mask(labels):
 
 def batch_all_triplet_loss(embeddings, labels, p, margin, squared=True):
 	#pairwise_dist = _pairwise_distances(embeddings, squared=squared)
-	pairwise_dist = _Lp_pairwise_distances(embeddings, p)
+	#pairwise_dist = _Lp_pairwise_distances(embeddings, p)
+	#pairwise_dist = _mahalanobis_dist(embeddings, labels)
 	#pairwise_dist = _batch_mahalanobis_dist(embeddings)
 	#pairwise_dist = _t_batch_mahalanobis_dist(embeddings)	
+	pairwise_dist = ngram_dist(embeddings, 3, 1)
 
 	anchor_positive_dist = torch.unsqueeze(pairwise_dist, 2)
 	anchor_negative_dist = torch.unsqueeze(pairwise_dist, 1)
@@ -224,3 +257,37 @@ def batch_all_triplet_loss(embeddings, labels, p, margin, squared=True):
 	triplet_loss = torch.sum(triplet_loss) / (num_positive_triplets + 1e-16)
 
 	return triplet_loss, fraction_positive_triplets
+
+def batch_hard_triplet_loss(embeddings, labels, p, margin, squared=True):
+	# Get the pairwise distance matrix
+	pairwise_dist = _pairwise_distances(embeddings, squared=squared)
+
+	# For each anchor, get the hardest positive
+	# First, we need to get a mask for every valid positive (they should have same label)
+	mask_anchor_positive = _get_anchor_positive_triplet_mask(labels)
+
+	# We put to 0 any element where (a, p) is not valid (valid if a != p and label(a) == label(p))
+	anchor_positive_dist = torch.mul(mask_anchor_positive, pairwise_dist)
+
+	# shape (batch_size, 1)
+	hardest_positive_dist = torch.max(anchor_positive_dist, 1, keepdims=True)
+
+	# For each anchor, get the hardest negative
+	# First, we need to get a mask for every valid negative (they should have different labels)
+	mask_anchor_negative = _get_anchor_negative_triplet_mask(labels)
+
+	# We add the maximum value in each row to the invalid negatives (label(a) == label(n))
+	max_anchor_negative_dist = torch.max(pairwise_dist, 1, keepdims=True)
+	anchor_negative_dist = pairwise_dist + max_anchor_negative_dist * (1.0 - mask_anchor_negative)
+
+	# shape (batch_size,)
+	hardest_negative_dist = torch.min(anchor_negative_dist, 1, keepdims=True)
+
+	# Combine biggest d(a, p) and smallest d(a, n) into final triplet loss
+	triplet_loss = torch.max(hardest_positive_dist - hardest_negative_dist + margin, torch.tensor([0.0], dtype=torch.double))
+
+	# Get final mean triplet loss
+	triplet_loss = torch.mean(triplet_loss)
+
+	return triplet_loss
+

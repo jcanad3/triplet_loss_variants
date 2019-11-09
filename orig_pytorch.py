@@ -3,8 +3,31 @@ from torch.utils.data import DataLoader
 from models import InceptionTriplet
 from batch_all_triplet_loss import batch_all_triplet_loss
 from torch.utils.tensorboard import SummaryWriter
-#from orig_batch_all_triplet import batch_all_triplet_loss
+from umap import UMAP
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 import torch
+
+def plot_latent(epoch, iteration, embeddings, labels):
+	print('Plotting embeddings...')
+	umap_embs = UMAP(n_neighbors=10, metric='euclidean').fit_transform(embeddings)
+	data = np.column_stack((umap_embs, labels))
+	df = pd.DataFrame(data, columns=['UMAP-1', 'UMAP-2', 'label'])
+	df['label'] = df['label'].astype(int)
+
+	for lab in np.unique(labels).tolist():
+		class_idx = np.argwhere(labels == lab)
+		class_embs = umap_embs[class_idx, :]
+		class_embs = np.squeeze(class_embs, 1)
+		plt.scatter(class_embs[:, 0], class_embs[:, 1], c=np.random.rand(1,3), alpha=0.4)
+
+	plt.title('UMAP of Speaker Embeddings')
+	plt.xlabel('UMAP 1')
+	plt.ylabel('UMAP 2')
+	plt.savefig('plots/' + str(iteration) + '.png')
+	plt.close()
+
 
 writer = SummaryWriter()
 
@@ -19,7 +42,7 @@ train_loader = DataLoader(
 val_data = Caltech101(mode='val')
 val_loader = DataLoader(
 	val_data,
-	batch_size=5,
+	batch_size=32,
 	shuffle=True,
 	drop_last=True
 )
@@ -52,27 +75,31 @@ for epoch in range(0, 100):
 		print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f} Frac_Pos: {}'.format(
 			epoch, batch_idx*5, len(train_loader.dataset),
 			100. * batch_idx / len(train_loader), loss.item(), fraction_of_positive.item()))
+		print('')
+
+		if iteration % 100 == 0:
+			embeddings = []
+			all_labels = []
+			count = 0
+			with torch.no_grad():
+				for batch_idx, (imgs, labels) in enumerate(val_loader):
+					imgs = imgs.reshape(imgs.shape[0]*imgs.shape[1], imgs.shape[2], imgs.shape[3], imgs.shape[4])
+					labels = labels.reshape(labels.shape[0]*labels.shape[1],)
+
+					embs = model(imgs)
+					embeddings.append(embs.detach().numpy())
+					all_labels.append(labels.detach().numpy().flatten())
+					count += len(all_labels)
+					if count >= 64:
+						break
+			embeddings = np.array(embeddings)
+			embeddings = embeddings.reshape(embeddings.shape[0]*embeddings.shape[1], embeddings.shape[2])
+			all_labels = np.array(all_labels).flatten()
+			plot_latent(epoch, iteration, embeddings, all_labels)	
+			model.train()
 		
 		iteration += 1
 
-	# iterate over test
-#	model.eval()
-#	test_loss = 0
-#	test_frac_pos = 0
-#	with torch.no_grad():
-#		for imgs, labels in val_loader:
-#			imgs = imgs.reshape(imgs.shape[0]*imgs.shape[1], imgs.shape[2], imgs.shape[3], imgs.shape[4])
-#			labels = labels.reshape(labels.shape[0]*labels.shape[1],)
-#
-#			embeddings = model(imgs)
-#			b_test_loss, b_test_frac_pos = batch_all_triplet_loss(embeddings, labels, 2.0, 1.0)
-#			test_loss += b_test_loss.item()
-#			test_frac_pos += b_test_frac_pos.item()
-#
-#	test_loss /= len(val_loader.dataset)
-#	test_frac_pos /= len(val_loader.dataset)
-#
-#	writer.add_scalar('Loss/test', test_loss)
-#	writer.add_scalar('Loss/test_frac_pos', test_frac_pos)
-#
-#	print('\nTest set: Average loss: {:.4f}, Average Frac Positive: {}\n'.format(test_loss, test_frac_pos))
+	torch.save(model.state_dict(), 'ckpts/ckpt_' + str(epoch))
+
+	
